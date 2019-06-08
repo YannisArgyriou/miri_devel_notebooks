@@ -1,0 +1,15 @@
+# Comments
+outpath 	/Users/ioannisa/Desktop/python/miri_devel/mtssim/OUTPUT/		# Path to the "outputs" folder.
+saveeps		no		# Save graphs to .eps files? (yes/no).
+epsroot		Test            # Root of the graphs' names.
+savespc		yes		# Save spectra to plain text file? (yes/no)
+spcfile		Test_spec.dat   # Name of the file with the spectra.
+savesum		yes		# Save file with summary of results?
+spcsumfile      Test_sum.dat            # Name of file with summary of results.
+units		JY		# Units of irradiance [MKS, CGS, PH, JY].
+wmin		2.		# Minimum wavelength (>= 2 um)
+wmax		30.		# Maximum wavelength (<=30 um)
+divergence	yes		# Does the beam comming out of the BB diverge?
+VASemit		yes		# Does the VAS emit? (yes/no)
+corrVAS		yes		# Account for difference between commanded and
+				# actual position of the VAS? (yes/no)

@@ -1,0 +1,8 @@
+# Band 4A   Etalon ET1B   RefSlice 6
+# Distortion map version {}8B.05.00 - date 2019-03-22
+# Trace (isoalpha): Take pixel trace along specified slice, specified alpha position trace is built by taking the pixel in every detector row with alpha value closest to the one specified 
+# xpos[i] = np.argmin(alpha_img[i,:])+funcs.find_nearest(alpha_img[i,:][(slice_img[i,:]!=0)],alpha_pos)
+# Band4A_ET1B_refslice6_alpha0.0
+
+# Reference Wavelength  Reference pixel (pix)
+17.879646137624142  949.9455174344004

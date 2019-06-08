@@ -1,0 +1,53 @@
+
+31st October 2011
+
+Tim and Paul have found that the transmission curve of the MOS included in MTSSim might be wrong, and the 11.3 um feature may be actually the 8 um feature seen in the FM data (spectra and imaging). After inspection of the INTA documentation it seems like they're right (relevant document: MIRI-TS-00004-ATK.pdf), and either the file with the curve got corrupted or most probably it was done wrong from the outset. 
+
+Here I aim at correcting this problem.
+
+I received the following e-mail on 31st/10/2011, forwarded by Alistair:
+
+
+"-----Original Message-----
+From: Eccleston, Paul (STFC,RAL,RALSP) 
+Sent: 25 October 2011 18:25
+To: Glasse, Alistair (STFC,ROE,UKATC); Grundy, Tim (STFC,RAL,RALSP); Walker, Helen (STFC,RAL,RALSP)
+Subject: FW: miri mirror measurement
+
+Alistair, et al,
+
+See measurements attached on reflectivity of the MTS MOS mirror coating sample. Data is fine at SW (<16 micron) but the FIR beamsplitter measurements are still looking dodgy. May be an possible absorption feature at ~27 microns but looks to be part of oscillations in the data - I need to spend some time with Hugh and understand why we can't get better data at LW end. Unfortunately we're not both in the lab until next Monday so we'll catch up then.
+
+Cheers,
+
+Paul"
+
+
+The forwarded file with the measured curve is MIRI_mirror_MIR.xls.
+
+This file has the curve in two stretches, which I save in ascii format in two
+files, MIRI_mirror_MIR_A.txt and MIRI_mirror_MIR_B.txt, which have the wavelengths in cm-1. Notice the transmissions are higher than 1 in some cases.
+
+
+Well, this e-mail I sent to Alistair, Paul, Tim and Helen on Nov-1st summarizes
+what I've done afterwards:
+
+"Hi,
+
+I've been able finally to read the reflec. curve of the MOS provided by the manufacturer (in document miri-ts-00004-atk) and have produced a single curve from 2. to 30 um, as follows:
+
+1) I've "read" the 8um feature out of the graph [in page 91] converting it to a .png file and then "tracing" it by hand with an IDL routine [with readpnggraph.pro]. Rather rudimentary but it's the best solution I found to read it out.
+
+2) from 2. to 8 um I used a single value of 99.5% apparent from the graph (well there's a minor glitch at around 3um that I introduced after the graph, but this is really minor).
+
+3) the same as in point 2 was done from 10 to 14 um.
+
+4) from 14 to 28.2 I used the value of the reflectivity given in the aforementioned document for an incidence angle of 45deg, which is the same used for the graph (2.5 to 16 um). The value at 30um is just an extrapolation.
+
+5) I patched these curves together and resampled to a common wavelength sampling [with MOSresample.pro]. The result is attached in a .txt file [MOScurve_capture.txt].
+
+You can see the result in the attached figure (MOScurves.png), it is the blue dashed line. The solid black line is the curve obtained at RAL a few days ago. The red and green lines are the old MOS curve in MTSSim adjusted to match the new curve, either subtracting some constant from the wavelengths (3um) or dividing them by some factor (1.37). You can see that the RAL curve does not match the shape of the manufacturer shape, and it seems to me that it has poorer resolution. Perhaps this poorer resolution, toghether with the asymmetry of the band, is the reason why the peak absorption of the black and blue lines do not match, as they should. Moreover, the RAL curve has values slightly above unity, and I had to subtract a value of 0.01 to have something sensible. All the reflectivity curves have been raised to the 4th power.
+
+I'd suggest to use the manufacturer curve I've just produced and sent you, but if you have any objection please let me know. Once you have given me some positive answer I could upload a new version of MTSSim with this curve for people to use it. Cheers,
+
+Ruymán"

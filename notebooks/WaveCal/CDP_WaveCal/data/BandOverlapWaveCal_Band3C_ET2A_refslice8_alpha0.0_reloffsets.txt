@@ -1,0 +1,23 @@
+# Band 3C   Etalon ET2A   RefSlice 8
+# Distortion map version 7B.05.01 - date 2019-03-22
+# Trace (isoalpha): Take pixel trace along specified slice, specified alpha position trace is built by taking the pixel in every detector row with alpha value closest to the one specified 
+# xpos[i] = np.argmin(alpha_img[i,:])+funcs.find_nearest(alpha_img[i,:][(slice_img[i,:]!=0)],alpha_pos)
+# Band3C_None_refslice8_alpha0.0
+
+# Slice Nr.  Pixel offset (pix)
+1  -1.74
+2  8.59
+3  -7.56
+4  -1.45
+5  2.45
+6  4.38
+7  3.28
+8  0.0
+9  10.87
+10  -3.61
+11  3.58
+12  8.65
+13  11.54
+14  11.9
+15  9.87
+16  5.43
