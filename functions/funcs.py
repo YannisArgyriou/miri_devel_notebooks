@@ -1,4 +1,8 @@
-"""Functions file"""
+"""Functions file used for calibration of MIRI data.
+
+Author: Ioannis Argyriou (Institute of Astronomy, KU Leuven, Belgium)
+Email address: ioannis.argyriou@kuleuven.be
+"""
 
 # import python modules
 import os
@@ -17,6 +21,12 @@ def mrs_aux(band):
     allbands = ['1A','1B','1C','2A','2B','2C','3A','3B','3C','4A','4B','4C']
     allchannels = ['1','2','3','4']
     allsubchannels = ['A','B','C']
+
+    # slice IDs on detector
+    sliceid1=[111,121,110,120,109,119,108,118,107,117,106,116,105,115,104,114,103,113,102,112,101]
+    sliceid2=[201,210,202,211,203,212,204,213,205,214,206,215,207,216,208,217,209]
+    sliceid3=[316,308,315,307,314,306,313,305,312,304,311,303,310,302,309,301]
+    sliceid4=[412,406,411,405,410,404,409,403,408,402,407,401]
 
     MRS_bands = {'1A':[4.83,5.82],
         '1B':[5.62,6.73],
@@ -98,7 +108,7 @@ def get_cdps(band,cdpDir,output='img'):
     # psf cdp, compiled by Adrian Glauser
     psf_subchan_name = band[0]+subchan_names[band[1]]
     psf_file = os.path.join(cdpDir,\
-      'MIRI_FM_%s_%s_PSF_7B.02.00.fits' % (detnick,psf_subchan_name))
+      'MIRI_FM_%s_%s_PSF_07.02.00.fits' % (detnick,psf_subchan_name))
 
     # spatial and spectral resolution cdp, compiled by Alvaro Labiano
     if int(band[0]) < 3: resol_subchan_name = '12'
@@ -109,7 +119,7 @@ def get_cdps(band,cdpDir,output='img'):
     # photon-conversion efficiency (PCE)
     pce_subchan_name = band[0]+subchan_names[band[1]]
     pce_file = os.path.join(cdpDir,\
-      'MIRI_FM_%s_%s_PCE_06.00.00.fits' % (detnick,pce_subchan_name))
+      'MIRI_FM_%s_%s_PCE_07.00.00.fits' % (detnick,pce_subchan_name))
 
     if output == 'filepath':
         return fringe_file,photom_file,psf_file,resol_file,pce_file
@@ -127,46 +137,6 @@ def get_cdps(band,cdpDir,output='img'):
         fringe_img_error = fits.open(fringe_file)[2].data        # [unitless]
         photom_img_error = fits.open(photom_file)[2].data        # [DN/s * pixel/mJy]
         return fringe_img_error,photom_img_error
-
-#--import MIRIM PSFs
-def mirimpsfs(workDir=None):
-    import glob
-    # CV2 PSF measurements
-    dataDir = workDir+'CV2_data/LVL2/'
-
-    files = [os.path.basename(i) for i in glob.glob(dataDir+'*')]
-    subchannels = ['SHORT','MED','LONG']
-    pointings = ['P'+str(i) for i in range(17)]
-
-    MIRIMPSF_dictionary = {}
-    for pointing in pointings:
-        mylist = []
-        for subchannel in subchannels:
-            sub = 'MIRM0363-{}-{}'.format(pointing,subchannel)
-            mylist.extend([s for s in files if sub in s])
-        MIRIMPSF_dictionary['CV2_'+pointing] = list(mylist)
-
-    # CV3 PSF measurements
-    dataDir = workDir+'CV3_data/LVL2/'
-
-    files = [os.path.basename(i) for i in glob.glob(dataDir+'*')]
-
-    pointings = ['Q'+str(i) for i in range(17)]
-    for pointing in pointings:
-        sub = 'MIRM103-{}-SHORT'.format(pointing)
-        MIRIMPSF_dictionary['CV3_'+pointing] = [s for s in files if sub in s]
-
-    # Dictionary keys are equivalent to PSF measurements in CV2 and CV3 tests (with different pointings).
-    # Dictionary indeces within keys, for CV2 obs. are equivalent to:
-    # [0,1,2,3] : SHORT_494,SHORT_495,SHORTB_494,SHORTB_495
-    # [4,5,6,7] : MED_494,MED_495,MEDB_494,MEDB_495
-    # [8,9,10,11] : LONG_494,LONG_495,LONGB_494,LONGB_495
-
-    # Dictionary indeces within keys, for CV3 obs. are equivalent to:
-    # [0,1,2,3] : SHORT_494,SHORT_495,SHORTB_494,SHORTB_495
-    # There are only SHORT CV3 PSF measurements
-
-    return MIRIMPSF_dictionary
 
 #--corrections
 def OddEvenRowSignalCorrection(sci_img,nRows=1024):
@@ -340,6 +310,161 @@ def straylightManga(band,sci_img,err_img,sliceMap,det_dims=(1024,1032)):
         scatmodel_pass2[:,i] = spline(yvec)
 
     return sci_img - scatmodel_pass2
+
+# fringe correction for point sources observed during ground tests
+def point_source_fringe_correction(sci_img,band,d2cMaps,slice_offsets=[0],xpos_offsets=[0]):
+    # wavelength map
+    lambdaMap = d2cMaps['lambdaMap']
+    # auxiliary data
+    bandlims = [lambdaMap[np.nonzero(lambdaMap)].min(),lambdaMap[np.nonzero(lambdaMap)].max()]
+    det_dims = (1024,1032)
+
+    # derive fringe correction map
+    fringe_img = np.ones(det_dims)
+    for slice_offset in slice_offsets:
+        ypos,xpos = detpixel_trace_compactsource(sci_img,band,d2cMaps,offset_slice=slice_offset)
+        for xpos_offset in xpos_offsets:
+            wavl = lambdaMap[ypos,xpos+xpos_offset]
+            wavl[wavl==0] = lambdaMap[ypos,xpos][wavl==0]
+            extracted_spectrum = sci_img[ypos,xpos+xpos_offset]
+
+            # fringe peaks are found according to two parameters
+            # 1) threshold
+            thres = 0
+            # 2) minimum distance between subsequent peaks
+            detsubstrfringe_wvnr_spacing = (1/0.17)/2. # assuming the detector substrate is always the dominant source of fringing
+            middle_wvnr = 1./(((bandlims[0]+bandlims[1])/2.)/10000.)
+            detsubstrfringe_wvl_spacing = 10000./middle_wvnr - 10000./(middle_wvnr+detsubstrfringe_wvnr_spacing)
+            min_dist = 0
+            while lambdaMap[512+min_dist,xpos[512+min_dist]+xpos_offset]-lambdaMap[512,xpos[512]+xpos_offset]<detsubstrfringe_wvl_spacing :
+                min_dist+=1
+            min_dist = int(round(min_dist/1.75))
+
+            # jumps/drops in signal due to displacement in pixel column
+            discont_idxs = np.unique(np.sort(np.concatenate([np.array([0]),np.where((np.diff(xpos+xpos_offset)==1))[0],np.where((np.diff(xpos+xpos_offset)==-1))[0]])))+1
+            discont_idxs = np.concatenate([discont_idxs,np.array([len(extracted_spectrum)])])
+
+            # omit sections with too few elements
+            bad_sections = []
+            for i in range(len(discont_idxs)-1):
+                if discont_idxs[i+1]-discont_idxs[i] <= min_dist:
+                    if discont_idxs[i+1] == -1:
+                        extracted_spectrum[discont_idxs[i]:] = np.nan
+                        bad_sections.extend([i,i+1])
+                    elif discont_idxs[i] == 0:
+                        extracted_spectrum[:discont_idxs[i+1]] = np.nan
+                        bad_sections.extend([i,i+1])
+                    else:
+                        extracted_spectrum[discont_idxs[i]-1:discont_idxs[i+1]+1] = np.nan
+                        bad_sections.extend([i,i+1])
+            discont_idxs = np.delete(discont_idxs,bad_sections)
+
+            omit_nan = ~np.isnan(extracted_spectrum)
+            wavl_noNaN = wavl[omit_nan]
+            extracted_spectrum_noNaN = extracted_spectrum[omit_nan]
+
+            # second iteration
+            discont_idxs = np.unique(np.sort(np.where((np.abs(np.diff(xpos[omit_nan]+xpos_offset))>=1))[0]))+1
+            if discont_idxs[0] != 0:
+                discont_idxs = np.concatenate((np.array([0]),discont_idxs))
+            if discont_idxs[-1] != len(extracted_spectrum_noNaN)-1:
+                discont_idxs = np.concatenate((discont_idxs,np.array([len(extracted_spectrum_noNaN)-1])))
+
+            outlier_condition = 5*np.std(np.abs(np.diff(extracted_spectrum_noNaN))) # five sigma
+            outliers = np.where(np.abs(np.diff(extracted_spectrum_noNaN)) > outlier_condition)[0]
+            invalid_outlier_idxs = [i for i in range(len(outliers)) if outliers[i] in discont_idxs-1]
+            outliers = np.delete(outliers,invalid_outlier_idxs)
+
+            test_case = find_peaks(np.abs(np.diff(extracted_spectrum_noNaN)),thres=outlier_condition/np.max(np.abs(np.diff(extracted_spectrum_noNaN))),min_dist=min_dist)
+            invalid_testcase_idxs = [i for i in range(len(test_case)) if test_case[i] in outliers]
+            test_case = np.delete(test_case,invalid_testcase_idxs)
+            if (set(test_case).issubset(discont_idxs[(discont_idxs!=0)]-1)) & (np.mean(d2cMaps['alphaMap'][ypos,xpos][np.nonzero(d2cMaps['alphaMap'][ypos,xpos])]) < 0):
+                case = '1'
+            elif (set(test_case).issubset(discont_idxs[(discont_idxs!=0)]-1)) & (np.mean(d2cMaps['alphaMap'][ypos,xpos][np.nonzero(d2cMaps['alphaMap'][ypos,xpos])]) > 0):
+                case = '2'
+            else:
+                case = '3'
+
+            if case in ['1','2']:
+                peaks_idxs = []
+                pseudo_wvl = []
+                pseudo_contin = []
+                for i in range(len(discont_idxs)-1):
+                    idx1,idx2 = discont_idxs[i],discont_idxs[i+1]
+                    pseudo_continuum = ((extracted_spectrum_noNaN[idx2-1]-extracted_spectrum_noNaN[idx1])/(wavl_noNaN[idx2-1]-wavl_noNaN[idx1]))*(np.linspace(wavl_noNaN[idx1],wavl_noNaN[idx2],idx2-idx1)-wavl[idx1])+extracted_spectrum_noNaN[idx1]
+                    # could try a 4th order polynomial for the pseudo_continuum, but too time consuming?..
+                    peak_idxs = idx1+find_peaks(extracted_spectrum_noNaN[idx1:idx2]-pseudo_continuum,thres=thres,min_dist=min_dist)
+                    invalid_peaks = [j for j in range(len(peak_idxs)) if peak_idxs[j] in outliers+1]
+                    peak_idxs = np.delete(peak_idxs,invalid_peaks)
+                    peaks_idxs.extend(peak_idxs)
+                    pseudo_wvl.extend(wavl_noNaN[idx1:idx2])
+                    pseudo_contin.extend(pseudo_continuum)
+            elif case == '3':
+                peaks_idxs = find_peaks(extracted_spectrum_noNaN,thres=thres,min_dist=min_dist)
+
+            # Scale to 1d spectrum continuum level (defined by fringe peaks)
+            #-- construct continuum level
+            if case in ['1','2']:
+                arr_profile = []
+                for i in range(len(discont_idxs)-1):
+                    idx1,idx2 = discont_idxs[i],discont_idxs[i+1]
+                    #-- store used range
+                    if i == 0 :
+                        idx_start = idx1
+                    if i == range(len(discont_idxs)-1)[-1]:
+                        idx_end = idx2+1
+
+                    if idx2 == len(extracted_spectrum_noNaN)-1:
+                        pseudo_continuum = ((extracted_spectrum_noNaN[len(extracted_spectrum_noNaN)-1]-extracted_spectrum_noNaN[idx1])/(wavl_noNaN[len(extracted_spectrum_noNaN)-1]-wavl_noNaN[idx1]))*(np.linspace(wavl_noNaN[idx1],wavl_noNaN[len(extracted_spectrum_noNaN)-1],len(extracted_spectrum_noNaN)-idx1)-wavl_noNaN[idx1])+extracted_spectrum_noNaN[idx1]
+                        if np.count_nonzero(np.isnan(pseudo_continuum)) !=0:
+                            print 'ISSUE WITH NANs'
+                            arr_profile.extend(np.zeros(len(extracted_spectrum_noNaN[idx1:idx2+1])))
+                            continue
+                        peak_idxs = find_peaks(extracted_spectrum_noNaN[idx1:]-pseudo_continuum,thres=thres,min_dist=min_dist)
+                        invalid_peaks = [j for j in range(len(peak_idxs)) if idx1+peak_idxs[j] in outliers+1]
+                        peaks_idxs = np.delete(peak_idxs,invalid_peaks)
+                        if len(peaks_idxs) == 2:
+                            arr_interpolator = scp_interpolate.InterpolatedUnivariateSpline(peaks_idxs,extracted_spectrum_noNaN[idx1:][peaks_idxs],k=1,ext=0)
+                            arr_profile.extend(arr_interpolator(range(len(extracted_spectrum_noNaN[idx1:]))) )
+                        elif len(peaks_idxs) == 3:
+                            arr_interpolator = scp_interpolate.InterpolatedUnivariateSpline(peaks_idxs,extracted_spectrum_noNaN[idx1:][peaks_idxs],k=2,ext=0)
+                            arr_profile.extend(arr_interpolator(range(len(extracted_spectrum_noNaN[idx1:]))) )
+                        elif len(peaks_idxs) > 3:
+                            arr_interpolator = scp_interpolate.InterpolatedUnivariateSpline(peaks_idxs,extracted_spectrum_noNaN[idx1:][peaks_idxs],k=3,ext=3)
+                            arr_profile.extend(arr_interpolator(range(len(extracted_spectrum_noNaN[idx1:]))) )
+                        else:
+                            arr_profile.extend(extracted_spectrum_noNaN[idx1:])
+                    else:
+                        pseudo_continuum = ((extracted_spectrum_noNaN[idx2-1]-extracted_spectrum_noNaN[idx1])/(wavl_noNaN[idx2-1]-wavl_noNaN[idx1]))*(np.linspace(wavl_noNaN[idx1],wavl_noNaN[idx2],idx2-idx1)-wavl_noNaN[idx1])+extracted_spectrum_noNaN[idx1]
+                        if np.count_nonzero(np.isnan(pseudo_continuum)) !=0:
+                            arr_profile.extend(np.zeros(len(extracted_spectrum_noNaN[idx1:idx2])))
+                            continue
+                        peak_idxs = find_peaks(extracted_spectrum_noNaN[idx1:idx2]-pseudo_continuum,thres=thres,min_dist=min_dist)
+                        invalid_peaks = [j for j in range(len(peak_idxs)) if idx1+peak_idxs[j] in outliers+1]
+                        peaks_idxs = np.delete(peak_idxs,invalid_peaks)
+                        if len(peaks_idxs) == 2:
+                            arr_interpolator = scp_interpolate.InterpolatedUnivariateSpline(peaks_idxs,extracted_spectrum_noNaN[idx1:idx2][peaks_idxs],k=1,ext=0)
+                            arr_profile.extend(arr_interpolator(range(len(extracted_spectrum_noNaN[idx1:idx2]))) )
+                        elif len(peaks_idxs) == 3:
+                            arr_interpolator = scp_interpolate.InterpolatedUnivariateSpline(peaks_idxs,extracted_spectrum_noNaN[idx1:idx2][peaks_idxs],k=2,ext=0)
+                            arr_profile.extend(arr_interpolator(range(len(extracted_spectrum_noNaN[idx1:idx2]))) )
+                        elif len(peaks_idxs) > 3:
+                            arr_interpolator = scp_interpolate.InterpolatedUnivariateSpline(peaks_idxs,extracted_spectrum_noNaN[idx1:idx2][peaks_idxs],k=3,ext=3)
+                            arr_profile.extend(arr_interpolator(range(len(extracted_spectrum_noNaN[idx1:idx2]))) )
+                        else:
+                            arr_profile.extend(extracted_spectrum_noNaN[idx1:idx2])
+            elif case == '3':
+                peaks_idxs = find_peaks(extracted_spectrum_noNaN,thres=thres,min_dist=min_dist)
+                arr_interpolator = scp_interpolate.InterpolatedUnivariateSpline(peaks_idxs,extracted_spectrum_noNaN[peaks_idxs],k=3,ext=3)
+                arr_profile = arr_interpolator(range(len(extracted_spectrum_noNaN)))
+
+            norm_profile = extracted_spectrum_noNaN[idx_start:idx_end]/arr_profile
+            norm_profile[(norm_profile <= 0.5)] = 1 # fringe amplitude cannot be more that 40% of signal
+            norm_profile[(norm_profile >= 1.4)] = 1
+
+            fringe_img[ypos[omit_nan],(xpos+xpos_offset)[omit_nan]] = norm_profile
+
+    return fringe_img,sci_img/fringe_img
 
 #--compute
 def getSpecR(lamb0,band,specres_table=None):
@@ -1109,13 +1234,20 @@ def rectangular_aperture(center=[0,0],width=1.,height=1.,d2cMaps=None):
 
     return pixels_inside_rectangle,rectangular_aperture_area
 
-def evaluate_psf_cdp(psffits,d2cMaps,source_center=[0,0]):
+def evaluate_psf_cdp(psffits,d2cMaps,source_center=[0,0],norm=True,cdp_slice=None):
     # PSF CDP is provided as a spectral cube
     #>get values
-    psf_values = psffits[1].data.transpose(2,1,0) # flip data from Z,Y,X to X,Y,Z
-    #>normalize values
-    for layer in range(psf_values.shape[2]):
-        psf_values[:,:,layer] /= psf_values[:,:,layer].sum()
+    psf_values = psffits[1].data.transpose(2,1,0).copy() # flip data from Z,Y,X to X,Y,Z
+    if norm:
+        #>normalize values
+        print('Normalizing PSF (divide by sum of all spaxel values)')
+        for layer in range(psf_values.shape[2]):
+            psf_values[:,:,layer] /= psf_values[:,:,layer].sum()
+    if cdp_slice is not None:
+        # use only a single layer of the PSF CDP cube
+        print('Using single slice of PSF cube')
+        for layer in range(psf_values.shape[2]):
+            psf_values[:,:,layer] = psf_values[:,:,cdp_slice]
 
     #>get grid
     NAXIS1,NAXIS2,NAXIS3 = psf_values.shape
@@ -1177,21 +1309,13 @@ def evaluate_psf_cdp(psffits,d2cMaps,source_center=[0,0]):
 
     psf = (w[0]*psfUL+w[1]*psfUR+w[2]*psfLL+w[3]*psfLR+w[4]*psfCEN)/sumweights
 
+    print('DONE')
     return psf
 
 #--fit
 # 1d
 def straight_line(x,a,b):
     return a*x+b
-
-def order2polyfit(x,a,b,c):
-    return a*x**2 + b*x +c
-
-def order3polyfit(x,a,b,c,d):
-    return a*x**3 + b*x**2 + c*x +d
-
-def order4polyfit(x,a,b,c,d,e):
-    return a*x**4 + b*x**3 + c*x**2 + d*x + e
 
 def gauss1d_wBaseline(x, A, mu, sigma, baseline):
     """1D Gaussian distribution function"""
@@ -1974,10 +2098,7 @@ def detpixel_trace(band,d2cMaps,sliceID=None,alpha_pos=None):
     # find pixel trace
     for row in ypos:
         if band[0] in ['1','4']:
-            try:xpos[row] = np.argmin(alpha_img[row,:])+find_nearest(alpha_img[row,:][(slice_img[row,:]!=0)],alpha_pos)
-            except ValueError:
-                """Band 1C has missing pixel values (zeros instead of valid values)"""
-                continue
+            xpos[row] = np.argmin(alpha_img[row,:])+find_nearest(alpha_img[row,:][(slice_img[row,:]!=0)],alpha_pos)
         elif band[0] in ['2','3']:
             xpos[row] = np.argmax(alpha_img[row,:])+find_nearest(alpha_img[row,:][(slice_img[row,:]!=0)],alpha_pos)
     xpos = xpos.astype(int)
@@ -1989,6 +2110,7 @@ def detpixel_trace_compactsource(sci_img,band,d2cMaps,offset_slice=0,verbose=Fal
     det_dims  = (1024,1032)
     nslices   = d2cMaps['nslices']
     sliceMap  = d2cMaps['sliceMap']
+    lambdaMap = d2cMaps['lambdaMap']
     ypos,xpos = np.arange(det_dims[0]),np.zeros(det_dims[0])
 
     sum_signals = np.zeros(nslices)
@@ -2002,8 +2124,21 @@ def detpixel_trace_compactsource(sci_img,band,d2cMaps,offset_slice=0,verbose=Fal
     sel_pix = (sliceMap == 100*int(band[0])+source_center_slice+offset_slice)
     signal_img[sel_pix] = sci_img[sel_pix]
     for row in ypos:
-        xpos[row] = np.argmax(signal_img[row,:])
+        signal_row = signal_img[row,:].copy()
+        signal_row[np.isnan(signal_row)] = 0.
+        xpos[row] = np.argmax(signal_row)
+        if (row>1) & (row<=512) & (xpos[row]<xpos[row-1]):
+            xpos[row] = xpos[row-1]
+        elif (row>1) & (row>512) & (xpos[row]>xpos[row-1]):
+            xpos[row] = xpos[row-1]
     xpos = xpos.astype(int)
+    # correct edge effects
+    xpos[:2] = xpos[2]
+    xpos[-2:] = xpos[-3]
+    # there can be no jumps/discontinuities of more than 3 pixels
+    if len(np.where(abs(np.diff(xpos))>3)[0]) > 0:
+        xpos[np.where(abs(np.diff(xpos))>3)[0][0]+1:] = xpos[1023-ypos[np.where(abs(np.diff(xpos))>3)[0][0]+1:]]
+
     return ypos,xpos
 
 def slice_alphapositions(band,d2cMaps,sliceID=None):
@@ -2073,11 +2208,8 @@ def slice_alphapositions(band,d2cMaps,sliceID=None):
     return new_alpha_positions
 
 #--slice mapping
-def slice_mapping(band,signal,signal_error,sliceMap_0percent,margin=5,stop_criterion = 5.,transm_criterion=0.9,verbose=False):
+def get_transm_img(band,signal,signal_error,sliceMap_0percent,margin=5,verbose=False):
     import pandas as pd
-    # Recommended margin value for channel 1 and 2 is 5 pixels.
-    # Recommended margin value for channel 3 and 4 is 7 pixels.
-
     # ids of the individual slices
     sliceid1=[111,121,110,120,109,119,108,118,107,117,106,116,105,115,104,114,103,113,102,112,101]
     sliceid2=[201,210,202,211,203,212,204,213,205,214,206,215,207,216,208,217,209]
@@ -2089,10 +2221,18 @@ def slice_mapping(band,signal,signal_error,sliceMap_0percent,margin=5,stop_crite
     elif band[0] == '3': sliceid = sliceid3
     elif band[0] == '4': sliceid = sliceid4
 
+    # hard-code margins from slice boundaries
+    if band[0] == '1':
+        margin = 4 # pixels
+    elif band[0] == '2':
+        margin = 5 # pixels
+    elif band in ['3A','3B']:
+        margin = 7 # pixels
+    else:
+        margin = 8 # pixels
+
     # initialize placeholders
     transm_img        = np.zeros((1024,1032))
-    new_sliceMap      = np.zeros((1024,1032))
-    new_sliceMap_poly = np.zeros((1024,1032))
 
     # interpolate NaN values
     # take care of any remaining NaN values present in the signal of channel 4
@@ -2110,60 +2250,70 @@ def slice_mapping(band,signal,signal_error,sliceMap_0percent,margin=5,stop_crite
         if verbose is True:
             print( 'Slice {}'.format(islice))
         for row in range(1,1023):
-            lower = np.where(sliceMap_0percent[row,:] == islice)[0][0]
-            upper = np.where(sliceMap_0percent[row,:] == islice)[0][-1]+2
+            lower_bound = np.where(sliceMap_0percent[row,:] == islice)[0][0]
+            upper_bound = np.where(sliceMap_0percent[row,:] == islice)[0][-1]+1
+
+            if islice == sliceid[0]:
+                # the left boundary of the left-most slice on the detector is badly constrained; introduce extra offset
+                lower = lower_bound + 2
+                upper = upper_bound
+            elif islice == sliceid[-1]:
+                # the right boundary of the right-most slice on the detector is badly constrained; introduce extra offset
+                lower = lower_bound
+                upper = upper_bound - 2
+            else:
+                lower = lower_bound
+                upper = upper_bound
 
             xdata = np.arange(1032)[lower+margin:upper-margin]
             ydata = interp_signal[row,lower+margin:upper-margin]
             sigma = interp_signal_error[row,lower+margin:upper-margin]
 
-            n_poly   = 1
-            residual_change = 100.
-            residual_changes = [residual_change]
-            counter = 0
-            flag    = 0
-            while residual_change > stop_criterion:
-                counter += 1
-                popt_1     = np.polyfit(xdata,ydata,n_poly,w=1/sigma)
-                poly_1     = np.poly1d(popt_1)
-                residual_1 = (ydata-poly_1(xdata))**2
+            popt     = np.polyfit(xdata,ydata,3,w=1/sigma)
+            poly     = np.poly1d(popt)
+            residual = (ydata-poly(xdata))**2
 
-                popt_2     = np.polyfit(xdata,ydata,n_poly+1,w=1/sigma)
-                poly_2     = np.poly1d(popt_2)
-                residual_2 = (ydata-poly_2(xdata))**2
+            transm_img[row,lower+margin:upper-margin] = interp_signal[row,lower+margin:upper-margin]/poly(np.arange(1032)[lower+margin:upper-margin] )
+            transm_img[row,lower:lower+margin+1] = interp_signal[row,lower:lower+margin+1]/poly(np.arange(1032)[lower+margin:upper-margin] )[0]
+            transm_img[row,upper-margin:upper+1] = interp_signal[row,upper-margin:upper+1]/poly(np.arange(1032)[lower+margin:upper-margin] )[-1]
 
-                residual_change = np.abs((residual_2.sum()-residual_1.sum())/residual_1.sum())*100.
-                residual_changes.append(residual_change)
+    return transm_img
 
-                n_poly+= 1
+def slice_mapping(band,sliceMap_0percent,transm_img,transm_criterion=0.9):
+    import pandas as pd
+    # ids of the individual slices
+    sliceid1=[111,121,110,120,109,119,108,118,107,117,106,116,105,115,104,114,103,113,102,112,101]
+    sliceid2=[201,210,202,211,203,212,204,213,205,214,206,215,207,216,208,217,209]
+    sliceid3=[316,308,315,307,314,306,313,305,312,304,311,303,310,302,309,301]
+    sliceid4=[412,406,411,405,410,404,409,403,408,402,407,401]
 
-                if residual_changes[counter]>residual_changes[counter-1]:
-                    flag = 1
-                    break
+    if band[0]   == '1': sliceid = sliceid1
+    elif band[0] == '2': sliceid = sliceid2
+    elif band[0] == '3': sliceid = sliceid3
+    elif band[0] == '4': sliceid = sliceid4
 
-                if n_poly == 5:
-                    break
+    # initialize placeholders
+    new_sliceMap      = np.zeros((1024,1032))
 
-            if n_poly == 2:
-                # first iteration gives good enough fit
-                n_polynomial   = 1
-                popt     = popt_1
-                poly     = poly_1
-                residual = residual_1
+    # compute new slice map
+    for islice in sliceid:
+        for row in range(1,1023):
+            lower_bound = np.where(sliceMap_0percent[row,:] == islice)[0][0]
+            upper_bound = np.where(sliceMap_0percent[row,:] == islice)[0][-1]+1
+
+            if islice == sliceid[0]:
+                # the left boundary of the left-most slice on the detector is badly constrained; introduce extra offset
+                lower = lower_bound + 2
+                upper = upper_bound
+            elif islice == sliceid[-1]:
+                # the right boundary of the right-most slice on the detector is badly constrained; introduce extra offset
+                lower = lower_bound
+                upper = upper_bound - 2
             else:
-                # n+1 iteration gives best fit
-                n_polynomial   = n_poly-1
-                popt     = popt_2
-                poly     = poly_2
-                residual = residual_2
-            if flag == 1:
-                n_polynomial   = n_poly-1
-                popt     = popt_1
-                poly     = poly_1
-                residual = residual_1
+                lower = lower_bound
+                upper = upper_bound
 
-            transmission = interp_signal[row,lower:upper]/poly(np.arange(1032)[lower:upper] )
-            transm_img[row,lower:upper] = transmission
+            transmission = transm_img[row,lower:upper+1]
 
             min_idx = np.where(transmission>transm_criterion)[0][0]
             max_idx = np.where(transmission>transm_criterion)[0][-1]
@@ -2171,6 +2321,23 @@ def slice_mapping(band,signal,signal_error,sliceMap_0percent,margin=5,stop_crite
             new_sliceMap[row,lower+min_idx+1:lower+max_idx] = islice
     new_sliceMap[0,:] = new_sliceMap[1,:]
     new_sliceMap[1023,:] = new_sliceMap[1022,:]
+
+    return new_sliceMap
+
+def slice_mapping_polyfit(band,new_sliceMap):
+    # ids of the individual slices
+    sliceid1=[111,121,110,120,109,119,108,118,107,117,106,116,105,115,104,114,103,113,102,112,101]
+    sliceid2=[201,210,202,211,203,212,204,213,205,214,206,215,207,216,208,217,209]
+    sliceid3=[316,308,315,307,314,306,313,305,312,304,311,303,310,302,309,301]
+    sliceid4=[412,406,411,405,410,404,409,403,408,402,407,401]
+
+    if band[0]   == '1': sliceid = sliceid1
+    elif band[0] == '2': sliceid = sliceid2
+    elif band[0] == '3': sliceid = sliceid3
+    elif band[0] == '4': sliceid = sliceid4
+
+    # initialize placeholders
+    new_sliceMap_poly = np.zeros((1024,1032))
 
     # fit polynomial solution to slice edges
     edge_pixels_left,edge_pixels_right = {},{}
@@ -2198,9 +2365,9 @@ def slice_mapping(band,signal,signal_error,sliceMap_0percent,margin=5,stop_crite
 
         for row in range(1024):
             assert np.around(poly_left(np.arange(1024))[row])<=np.around(poly_right(np.arange(1024))[row])+2, 'Something went wrong in the polynomial fitting'
-            new_sliceMap_poly[row,np.around(poly_left(np.arange(1024))[row]):np.around(poly_right(np.arange(1024))[row])+2] = islice
+            new_sliceMap_poly[row,int(np.around(poly_left(np.arange(1024))[row])):int(np.around(poly_right(np.arange(1024))[row])+2)] = islice
 
-    return transm_img,new_sliceMap,new_sliceMap_poly
+    return new_sliceMap_poly
 
 #--plot
 def plot_point_source_centroiding(band,sci_img,d2cMaps,spec_grid=None,centroid=None,ibin=None,data=None):
@@ -3815,3 +3982,13 @@ def Gauss2D_integral(amp,sigma_x,sigma_y,base,x1,x2,y1,y2):
     s = integrate.dblquad(f, x1, x2, lambda x: y1, lambda x: y2)
 
     return s[0]
+
+def plot(x,y):
+    plt.figure()
+    plt.plot(x,y)
+    plt.tight_layout()
+
+def implot(img):
+    plt.figure()
+    plt.imshow(img)
+    plt.tight_layout()

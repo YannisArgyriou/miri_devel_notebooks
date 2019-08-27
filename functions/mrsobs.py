@@ -7,7 +7,7 @@ File paths to mrs observations.
 
 Created on Thu Mar 01 10:58:50 2018
 
-@author: Ioannis Argyriou (KUL, ioannis.argyriou@kuleuven.be)
+@author: Ioannis Argyriou (KULeuven, Belgium, ioannis.argyriou@kuleuven.be)
 """
 # some trivia
 allbands = ['1A','1B','1C','2A','2B','2C','3A','3B','3C','4A','4B','4C']
@@ -854,7 +854,7 @@ def CV_800K_BB_MRS_OPT_02_obs(dataDir,band,campaign=None,pointing='all',output='
     import glob
 
     files = [os.path.basename(i) for i in glob.glob(dataDir+'*')]
-    subchannels = ['SHORT','MED','LONG']
+    subchannels = ['SHORT','SHRT','MED','LONG']
     MIRIMPSF_dictionary = {}
     if campaign == 'CV2':
         # 16 pointings in total
@@ -879,6 +879,18 @@ def CV_800K_BB_MRS_OPT_02_obs(dataDir,band,campaign=None,pointing='all',output='
             sci_data,bkg_data = hdulist_sci[0].data[0,:,:],hdulist_bkg[0].data[0,:,:]
             hdulist_sci.close() ; hdulist_bkg.close()
             return sci_data,bkg_data
+        elif (pointing != 'all') & (output=='err_img'):
+            from astropy.io import fits
+            if band in ['1A','2A']: sci_idx = 1
+            elif band in ['1B','2B']:sci_idx = 5
+            elif band in ['1C','2C']:sci_idx = 9
+            elif band in ['3A','4A']:sci_idx = 0
+            elif band in ['3B','4B']:sci_idx = 4
+            elif band in ['3C','4C']:sci_idx = 8
+            hdulist_sci,hdulist_bkg = fits.open(dataDir+MIRIMPSF_dictionary[campaign+'_'+pointing][sci_idx]), fits.open(dataDir+MIRIMPSF_dictionary[campaign+'_'+pointing][sci_idx+2])
+            sci_data,bkg_data = hdulist_sci[0].data[1,:,:],hdulist_bkg[0].data[1,:,:]
+            hdulist_sci.close() ; hdulist_bkg.close()
+            return sci_data,bkg_data
     elif campaign == 'CV3':
         # 16 pointings in total
         pointings = ['Q'+str(i) for i in range(17)]
@@ -893,6 +905,14 @@ def CV_800K_BB_MRS_OPT_02_obs(dataDir,band,campaign=None,pointing='all',output='
             elif band in ['3A','4A']:sci_idx = 0
             hdulist_sci,hdulist_bkg = fits.open(dataDir+MIRIMPSF_dictionary[campaign+'_'+pointing][sci_idx]), fits.open(dataDir+MIRIMPSF_dictionary[campaign+'_'+pointing][sci_idx+2])
             sci_data,bkg_data = hdulist_sci[0].data[0,:,:],hdulist_bkg[0].data[0,:,:]
+            hdulist_sci.close() ; hdulist_bkg.close()
+            return sci_data,bkg_data
+        elif (pointing != 'all') & (output=='err_img'):
+            from astropy.io import fits
+            if band in ['1A','2A']: sci_idx = 1
+            elif band in ['3A','4A']:sci_idx = 0
+            hdulist_sci,hdulist_bkg = fits.open(dataDir+MIRIMPSF_dictionary[campaign+'_'+pointing][sci_idx]), fits.open(dataDir+MIRIMPSF_dictionary[campaign+'_'+pointing][sci_idx+2])
+            sci_data,bkg_data = hdulist_sci[0].data[1,:,:],hdulist_bkg[0].data[1,:,:]
             hdulist_sci.close() ; hdulist_bkg.close()
             return sci_data,bkg_data
         """
@@ -931,6 +951,12 @@ def CV_800K_BB_MRS_OPT_02_obs(dataDir,band,campaign=None,pointing='all',output='
             from astropy.io import fits
             hdulist_sci = fits.open(sci_imgs[pointing])
             sci_data = hdulist_sci[0].data[0,:,:]
+            hdulist_sci.close()
+            return sci_data
+        elif (pointing != 'all') & (output=='err_img'):
+            from astropy.io import fits
+            hdulist_sci = fits.open(sci_imgs[pointing])
+            sci_data = hdulist_sci[0].data[1,:,:]
             hdulist_sci.close()
             return sci_data
 
