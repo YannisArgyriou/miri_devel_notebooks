@@ -1,7 +1,7 @@
 # mirical_notebooks
 This repository contains all the developed tools and illustrative notebooks pertaining to the MIRI calibration efforts.  
   
-Calibration items (cal_items):  
+Calibration items:  
 * CrossTalk_ElectronicGhosts  
 * CubeBuilding  
 * DarkCurrent  
