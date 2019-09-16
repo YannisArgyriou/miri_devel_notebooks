@@ -19,7 +19,7 @@ Calibration items:
 * mirisim  
 * otis  
 * OTIS_investigations  
-* PSF  
+* MRS_PSF  
 * pyMTSSim  
 * ResetSwitchChargeDecay  
 * SliceMasking  
