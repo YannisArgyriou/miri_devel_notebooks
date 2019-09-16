@@ -14,7 +14,7 @@ Calibration items:
 * InternalCalibrationSource  
 * ISOSWS_PlanetaryNebulae  
 * Last frame effect  
-* LinearityCorrection  
+* NonLinearity  
 * MIRI_PointSources  
 * mirisim  
 * otis  
