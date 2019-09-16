@@ -1,7 +1,10 @@
 """Functions file used for calibration of MIRI data.
 
-Author: Ioannis Argyriou (Institute of Astronomy, KU Leuven, Belgium)
-Email address: ioannis.argyriou@kuleuven.be
+:History:
+
+Created on Thu Mar 01 10:58:50 2018
+
+@author: Ioannis Argyriou (KULeuven, Belgium, ioannis.argyriou@kuleuven.be)
 """
 
 # import python modules
@@ -888,12 +891,12 @@ def get_pixel_spatial_area(band,d2cMaps):
     alphaULMap = d2cMaps['alphaULMap']
     alphaLLMap = d2cMaps['alphaLLMap']
     alphaURMap = d2cMaps['alphaURMap']
-    alphaLRMap = d2cMaps['alphaULMap']
+    alphaLRMap = d2cMaps['alphaLRMap']
 
     betaULMap = d2cMaps['betaULMap']
     betaLLMap = d2cMaps['betaLLMap']
     betaURMap = d2cMaps['betaURMap']
-    betaLRMap = d2cMaps['betaULMap']
+    betaLRMap = d2cMaps['betaLRMap']
 
     A1 = np.sqrt( (alphaULMap-alphaLLMap)**2 + (betaULMap-betaLLMap)**2 )
     B1 = np.sqrt( (alphaURMap-alphaULMap)**2 + (betaURMap-betaULMap)**2 )

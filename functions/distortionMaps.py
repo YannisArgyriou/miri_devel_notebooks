@@ -147,7 +147,7 @@ def d2cMapping(band,cdpDir,slice_transmission='80pc',fileversion = "06.04.00"):
         pixelLLy = pixelCtry + 0.5
         pixelLLx = pixelCtrx - 0.5
         pixelULy = pixelCtry - 0.5
-        pixelULx = pixelCtrx + 0.5
+        pixelULx = pixelCtrx - 0.5
         pixelURy = pixelCtry - 0.5
         pixelURx = pixelCtrx + 0.5
         pixelLRy = pixelCtry + 0.5
